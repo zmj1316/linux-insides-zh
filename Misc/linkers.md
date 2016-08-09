@@ -215,6 +215,8 @@ factorial:     file format elf64-x86-64
 
 As we can see in the previous output, the address of the `main` function is `0x0000000000400506`. Why it does not start from `0x0`? You may already know that standard C programs are linked with the `glibc` C standard library (assuming the `-nostdlib` was not passed to the `gcc`). The compiled code for a program includes constructor functions to initialize data in the program when the program is started. These functions need to be called before the program is started, or in another words before the `main` function is called. To make the initialization and termination functions work, the compiler must output something in the assembler code to cause those functions to be called at the appropriate time. Execution of this program will start from the code placed in the special `.init` section. We can see this in the beginning of the objdump output:
 
+在前面的输出中我们可以看到， `main` 函数的地址是 `0x0000000000400506`。为什么它不是从 `0x0` 开始的呢？你可能已经知道标准 C 程序是使用 `glibc` 的 C 标准库链接的（假设参数 `-nostdlib` 没有被传给 `gcc` ）。编译后的程序代码包含了用于在程序启动时初始化程序中数据的构造函数。这些函数需要在程序启动前被调用，或者说在 `main` 函数之前被调用。为了让初始化和终止函数起作用，编译器必须在汇编代码中输出一些让这些函数在正确时间被调用的代码。执行这个程序将会启动位于特殊的 `.init` 段的代码。我们可以从以下的 objdump 输出中看出：
+
 ```
 objdump -S factorial | less
 
@@ -229,12 +231,16 @@ Disassembly of section .init:
 
 Not that it starts at the `0x00000000004003a8` address relative to the `glibc` code. We can check it also in the [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) output by running `readelf`:
 
+注意其开始于相对 `glibc`代码偏移 `0x00000000004003a8` 的地址。我们也可以运行 `readelf` ，在 [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) 输出中检查： 
+
 ```
 $ readelf -d factorial | grep \(INIT\)
  0x000000000000000c (INIT)               0x4003a8
  ```
 
 So, the address of the `main` function is `0000000000400506` and is offset from the `.init` section. As we can see from the output, the address of the `factorial` function is `0x0000000000400537` and binary code for the call of the `factorial` function now is `e8 18 00 00 00`. We already know that `e8` is opcode for the `call` instruction, the next `18 00 00 00` (note that address represented as little endian for `x86_64`, so it is `00 00 00 18`) is the offset from the `callq` to the `factorial` function:
+
+所以， `main` 函数的地址是 `0000000000400506` ，为相对于 `.init` 段的偏移地址。我们可以从输出中看出，`factorial` 函数的地址是 `0x0000000000400537` ，并且现在调用 `factorial` 函数的二进制代码是 `e8 18 00 00 00`。我们已经知道 `e8` 是 `call` 指令的操作码，接下来的 `18 00 00 00` （注意 `x86_64`中地址是小头存储的，所以是 `00 00 00 18` ）是从 `callq` 到 `factorial` 函数的偏移。
 
 ```python
 >>> hex(0x40051a + 0x18 + 0x5) == hex(0x400537)
@@ -243,14 +249,22 @@ True
 
 So we add `0x18` and `0x5` to the address of the `call` instruction. The offset is measured from the address of the following instruction. Our call instruction is 5-bytes long (`e8 18 00 00 00`) and the `0x18` is the offset of the call after the `factorial` function. A compiler generally creates each object file with the program addresses starting at zero. But if a program is created from multiple object files, these will overlap.
 
+所以我们把 `0x18`和 `0x5` 加到 `call` 指令的地址上。偏移是从接下来一条指令开始算起的。我们的调用指令是 5 字节长（`e8 18 00 00 00`）并且 `0x18` 是从 `factorial` 函数之后的调用算起的偏移。编译器一般按程序地址从零开始创建目标文件。但是如果程序由多个目标文件生成，这些地址会重叠。
+
 What we have seen in this section is the `relocation` process. This process assigns load addresses to the various parts of the program, adjusting the code and data in the program to reflect the assigned addresses.
+
+我们在这一段看到的是 `重定位` 流程。这个流程为程序中各个部分赋予加载地址，调整程序中的代码和数据以反映出赋值的地址。
 
 Ok, now that we know a little about linkers and relocation it is time to learn more about linkers by linking our object files.
 
-GNU linker
+好了，现在我们知道了一点关于链接器和重定位的知识，是时候通过链接我们的目标文件来来学习更多关于链接器的知识了。
+
+GNU 链接器
 -----------------
 
 As you can understand from the title, I will use [GNU linker](https://en.wikipedia.org/wiki/GNU_linker) or just `ld` in this post. Of course we can use `gcc` to link our `factorial` project:
+
+如标题所说，在这篇文章中，我将会使用 [GNU 链接器](https://en.wikipedia.org/wiki/GNU_linker) 或者说 `ld` 。当然我们可以使用 `gcc` 来链接我们的 `factorial` 项目： 
 
 ```
 $ gcc main.c lib.o -o factorial
@@ -258,12 +272,16 @@ $ gcc main.c lib.o -o factorial
 
 and after it we will get executable file - `factorial` as a result:
 
+在这之后，作为结果我们将会得到可执行文件—— `factorial`：
+
 ```
 ./factorial 
 factorial of 5 is: 120
 ```
 
 But `gcc` does not link object files. Instead it uses `collect2` which is just wrapper for the `GNU ld` linker:
+
+但是 `gcc` 不会链接目标文件。取而代之，其会使用 `GUN ld` 链接器的包装—— `collect2`。 
 
 ```
 ~$ /usr/lib/gcc/x86_64-linux-gnu/4.9/collect2 --version
@@ -277,11 +295,16 @@ GNU ld (GNU Binutils for Debian) 2.25
 
 Ok, we can use gcc and it will produce executable file of our program for us. But let's look how to use `GNU ld` linker for the same purpose. First of all let's try to link these object files with the following example:
 
+好，我们可以使用 gcc 并且其会为我们的程序生成可执行文件。但是让我们看看如何使用 `GUN ld` 实现相同的目的。首先，让我们尝试用如下样例链接这些目标文件：
+
 ```
 ld main.o lib.o -o factorial
 ```
 
 Try to do it and you will get following error:
+
+尝试一下，你将会得到如下错误：
+
 
 ```
 $ ld main.o lib.o -o factorial
@@ -292,10 +315,17 @@ main.c:(.text+0x26): undefined reference to `printf'
 
 Here we can see two problems:
 
+这里我们可以看到两个问题：
+
 * Linker can't find `_start` symbol;
 * Linker does not know anything about `printf` function.
 
+* 链接器无法找到 `_start` 符号；
+* 链接器对 `printf` 一无所知。
+
 First of all let's try to understand what is this `_start` entry symbol that appears to be required for our program to run? When I started to learn programming I learned that the `main` function is the entry point of the program. I think you learned this too :) But it actually isn't the entry point, it's `_start` instead. The `_start` symbol is defined in the `crt1.o` object file. We can find it with the following command:
+
+首先，让我们尝试理解好像是我们程序运行所需要的 `_start` 入口符号是什么。当我开始学习编程时，我知道了 `main` 函数是程序的入口点。我认为你们也是如此认为的 :) 但实际上这不是入口点，`_start` 才是。 `_start` 符号被 `crt1.0` 所定义。我们可以用如下指令发现它：
 
 ```
 $ objdump -S /usr/lib/gcc/x86_64-linux-gnu/4.9/../../../x86_64-linux-gnu/crt1.o
@@ -314,6 +344,8 @@ Disassembly of section .text:
 ```
 
 We pass this object file to the `ld` command as its first argument (see above). Now let's try to link it and will look on result:
+
+我们将该目标文件作为第一个参数传递给 `ld` 指令（如上所示）。现在让我们尝试链接它，会得到如下结果：
 
 ```
 ld /usr/lib/gcc/x86_64-linux-gnu/4.9/../../../x86_64-linux-gnu/crt1.o \
