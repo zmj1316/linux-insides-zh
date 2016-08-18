@@ -361,11 +361,15 @@ main.c:(.text+0x26): undefined reference to `printf'
 
 Unfortunately we will see even more errors. We can see here old error about undefined `printf` and yet another three undefined references:
 
+不幸的是，我们甚至会看到更多报错。我们可以在这里看到关于未定义 `printf` 的旧错误以及另外三个未定义的引用：
+
 * `__libc_csu_fini`
 * `__libc_csu_init`
 * `__libc_start_main`
 
 The `_start` symbol is defined in the [sysdeps/x86_64/start.S](https://sourceware.org/git/?p=glibc.git;a=blob;f=sysdeps/x86_64/start.S;h=0d27a38e9c02835ce17d1c9287aa01be222e72eb;hb=HEAD) assembly file in the `glibc` source code. We can find following assembly code lines there:
+
+`_start` 符号被定义在 `glibc` 源文件的汇编文件 [sysdeps/x86_64/start.S](https://sourceware.org/git/?p=glibc.git;a=blob;f=sysdeps/x86_64/start.S;h=0d27a38e9c02835ce17d1c9287aa01be222e72eb;hb=HEAD) 中。我们可以在那里找到如下汇编代码： 
 
 ```assembly
 mov $__libc_csu_fini, %R8_LP
@@ -376,12 +380,18 @@ call __libc_start_main
 
 Here we pass address of the entry point to the `.init` and `.fini` section that contain code that starts to execute when the program is ran and the code that executes when program terminates. And in the end we see the call of the `main` function from our program. These three symbols are defined in the [csu/elf-init.c](https://sourceware.org/git/?p=glibc.git;a=blob;f=csu/elf-init.c;hb=1d4bbc54bd4f7d85d774871341b49f4357af1fb7) source code file. The following two object files:
 
+这里我们传递了 `.init` 和 `.fini` 段的入口点地址，它们包含了程序开始和结束时被执行的代码。并且在结尾我们看到对我们程序的 `main` 函数的调用。这三个符号被定义在源文件 [csu/elf-init.c](https://sourceware.org/git/?p=glibc.git;a=blob;f=csu/elf-init.c;hb=1d4bbc54bd4f7d85d774871341b49f4357af1fb7) 中。如下两个目标文件：
+
 * `crtn.o`;
 * `crti.o`.
 
 define the function prologs/epilogs for the .init and .fini sections (with the `_init` and `_fini` symbols respectively).
 
+定义了 .init 和 .fini 段的开端和尾声（分别为符号 `_init` 和 `_fini` ）。
+
 The `crtn.o` object file contains these `.init` and `.fini` sections:
+
+`crtn.o` 目标文件包含了 `.init` 和 `.fini` 这些段： 
 
 ```
 $ objdump -S /usr/lib/gcc/x86_64-linux-gnu/4.9/../../../x86_64-linux-gnu/crtn.o
@@ -399,6 +409,8 @@ Disassembly of section .fini:
 
 And the `crti.o` object file contains the `_init` and `_fini` symbols. Let's try to link again with these two object files:
 
+且 `crti.o` 目标文件包含了符号 `_init` 和 `_fini`。让我们再次尝试链接这两个目标文件： 
+
 ```
 $ ld \
 /usr/lib/gcc/x86_64-linux-gnu/4.9/../../../x86_64-linux-gnu/crt1.o \
@@ -408,6 +420,8 @@ $ ld \
 ```
 
 And anyway we will get the same errors. Now we need to pass `-lc` option to the `ld`. This option will search for the standard library in the paths present in the `$LD_LIBRARY_PATH` environment variable. Let's try to link again wit the `-lc` option:
+
+当然，我们会得到相同的错误。现在我们需要把 `-lc` 选项传递给 `ld` 。这个选项将会在环境变量 `$LD_LIBRARY_PATH` 指定的目录中搜索标准库。让我们再次尝试用 `-lc` 选项链接：
 
 ```
 $ ld \
@@ -419,12 +433,16 @@ $ ld \
 
 Finally we get an executable file, but if we try to run it, we will get strange results:
 
+最后我们获得了一个可执行文件，但是如果我们尝试运行它，我们会遇到奇怪的结果：
+
 ```
 $ ./factorial 
 bash: ./factorial: No such file or directory
 ```
 
 What's the problem here? Let's look on the executable file with the [readelf](https://sourceware.org/binutils/docs/binutils/readelf.html) util:
+
+这里除了什么问题？让我们用 [readelf](https://sourceware.org/binutils/docs/binutils/readelf.html) 工具看看这个可执行文件：
 
 ```
 $ readelf -l factorial 
@@ -465,6 +483,8 @@ Program Headers:
 
 Note on the strange line:
 
+注意这奇怪的一行：
+
 ```
   INTERP         0x00000000000001c8 0x00000000004001c8 0x00000000004001c8
                  0x000000000000001c 0x000000000000001c  R      1
@@ -472,6 +492,8 @@ Note on the strange line:
 ```
 
 The `.interp` section in the `elf` file holds the path name of a program interpreter or in another words the `.interp` section simply contains an `ascii` string that is the name of the dynamic linker. The dynamic linker is the part of Linux that loads and links shared libraries needed by an executable when it is executed, by copying the content of libraries from disk to RAM. As we can see in the output of the `readelf` command it is placed in the `/lib64/ld-linux-x86-64.so.2` file for the `x86_64` architecture. Now let's add the `-dynamic-linker` option with the path of `ld-linux-x86-64.so.2` to the `ld` call and will see the following results:
+
+`elf` 文件的 `.interp` 段保存了一个程序解释器的路径名，或者说 `.interp` 段就包含了一个动态链接器名字的 `ascii` 字符串。动态链接器是 Linux 的一部分，其通过将库的内容从磁盘复制到内存中以加载和链接一个可执行文件被执行所需要的动态链接库。我们可以从 `readelf` 命令的输出中看到，针对 `x86_64` 架构，其被放在 `/lib64/ld-linux-x86-64.so.2`。现在让我们把 `ld-linux-x86-64.so.2` 的路径和 `-dynamic-linker` 选项一起传递给 `ld` 调用，然后会看到如下结果：
 
 ```
 $ gcc -c main.c lib.c
@@ -486,6 +508,8 @@ $ ld \
 
 Now we can run it as normal executable file:
 
+现在我们可以想普通可执行文件一样执行它了：
+
 ```
 $ ./factorial
 
@@ -493,6 +517,8 @@ factorial of 5 is: 120
 ```
 
 It works! With the first line we compile the `main.c` and the `lib.c` source code files to object files. We will get the `main.o` and the `lib.o` after execution of the `gcc`:
+
+成功了！在第一行，我们把源文件 `main.c` 和 `lib.c` 编译成目标文件。执行 `gcc` 之后我们将会获得 `main.o` 和 `lib.o`： 
 
 ```
 $ file lib.o main.o
@@ -502,12 +528,18 @@ main.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV), not stripped
 
 and after this we link object files of our program with the needed system object files and libraries. We just saw a simple example of how to compile and link a C program with the `gcc` compiler and `GNU ld` linker. In this example we have used a couple command line options of the `GNU linker`, but it supports much more command line options than `-o`, `-dynamic-linker`, etc... Moreover `GNU ld` has its own language that allows to control the linking process. In the next two paragraphs we will look into it.
 
-Useful command line options of the GNU linker
+在这之后，我们用所需的系统目标文件和库连链接我们的程序。我们刚看了一个简单的关于如何用 `gcc` 编译器和 `GNU ld` 链接器编译和链接一个 C 程序的样例。在这个样例中，我们使用了一些 `GNU linker` 的命令行选项，但是除了 `-o`、`-dynamic-linker` 等，它还支持其他很多选项。此外，`GNU ld` 还拥有其自己的语言来控制链接过程。我们会在接下来两段深入。
+
+实用的 GNU 链接器命令行选项
 ----------------------------------------------
 
 As I already wrote and as you can see in the manual of the `GNU linker`, it has big set of the command line options. We've seen a couple of options in this post: `-o <output>` - that tells `ld` to produce an output file called `output` as the result of linking, `-l<name>` that adds the archive or object file specified by the name, `-dynamic-linker` that specifies the name of the dynamic linker. Of course `ld` supports much more command line options, let's look at some of them.
 
+正如我之前所说，你也可以从 `GNU linker` 的指南看到，其拥有大量的命令行选项。我们已经在这篇文章见到一些： `-o <output>` - 告诉 `ld` 将链接结果输出成一个叫做 `output` 的文件，`-l<name>` - 通过文件名添加指定存档或者目标文件，`-dynamic-linker` 通过名字指定动态链接器。当然， `ld` 支持更多选项，让我们看看其中的一些。
+
 The first useful command line option is `@file`. In this case the `file` specifies filename where command line options will be read. For example we can create file with the name `linker.ld`, put there our command line arguments from the previous example and execute it with:
+
+第一个实用的选项是 `@file` 。在这里 `file` 指定了命令行选项将读取的文件名。比如我们可以创建一个叫做 `linker.ld` 的文件，把我们上一个例子里面的命令行参数放进去然后执行：
 
 ```
 $ ld @linker.ld
